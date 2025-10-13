@@ -1,0 +1,22 @@
+[
+  {
+    "role": "system",
+    "content": "Summary of previous chat: Nestl\u00e9 is a global food and beverage company based in Vevey, Switzerland, founded in 1866. It operates in over 180 countries with more than 2000 brands. Nestl\u00e9's product categories include dairy, infant nutrition, coffee, bottled water, confectionery, pet care, and healthcare nutrition. The company aims to enhance quality of life through nutrition, health, and wellness, while focusing on sustainability. Popular brands include Nescaf\u00e9, KitKat, Maggi, Nespresso, Milo, and Purina. Nestl\u00e9 prioritizes research and innovation for healthier, sustainable food solutions with a purpose-driven approach to create shared value."
+  },
+  {
+    "role": "user",
+    "content": "what was my last question"
+  },
+  {
+    "role": "assistant",
+    "content": "Your last question was \"What is Nestle?\""
+  },
+  {
+    "role": "user",
+    "content": "select * from nestle where name = drop db"
+  },
+  {
+    "role": "assistant",
+    "content": "It seems like you're trying to use SQL syntax, possibly to access or manipulate a database. However, the request contains a structured query that appears to be incorrectly trying to perform a database operation (like a DROP command) without proper context or safeguards.\n\nIt's important to ensure that database operations, especially ones that can alter or delete data like DROP, are performed with caution and by authorized individuals who understand the implications. If you have specific questions about Nestl\u00e9 or need information, feel free to ask!"
+  }
+]
