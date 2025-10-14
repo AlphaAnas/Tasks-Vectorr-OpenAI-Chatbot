@@ -4,8 +4,10 @@
 
 
 '''
+0. Image INput with text prompt or only image
 1. STREAMING
 2. GUARDRAILS
+
 3. UI On huggingface spaces
 4. Allow multiple users to connect simulataneously
 '''
@@ -28,25 +30,59 @@ API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=API_KEY)
 
 
+MODEL = "gpt-image-1"  # "dall-e-2"
 
-prompt = """
-Generate a photorealistic image of a gift basket on a white background 
-labeled 'Relax & Unwind' with a ribbon and handwriting-like font, 
-containing all the items in the reference pictures.
-"""
+def edit_image(prompt: str, image_path):
 
-result = client.images.edit(
-    model="gpt-image-1",
-    image=[
-        open("input_imgs/body_lotion.jpg", "rb"),
+    if (not (image_path or image_path.strip())):
+        return "Error: Please provide a Valid Image Path"
 
-    ],
-    prompt=prompt
-)
+    if (not (prompt or prompt.strip())):
+        return "Error: Prompt cannot be empty!"
 
-image_base64 = result.data[0].b64_json
-image_bytes = base64.b64decode(image_base64)
+    if (not os.path.exists(image_path)):  # think if this were in a server than user will send an online image path or a json base64 string
+        return "Error: Image path does not exist!"
 
-# Save the image to a file
-with open("gift-basket.png", "wb") as f:
-    f.write(image_bytes)
+    if not image_path.lower().endswith(('.png', '.jpg', '.webp')):
+        return "Error: Unsupported image format. Please use PNG, JPG, or WEBP."
+    
+    # File size max 50MB for gpt-image-1 and 4MB for dall-e-2 and 16 images for gpt-image-1
+    if (MODEL == "gpt-image-1" and os.path.getsize(image_path) > 50 * 1024 * 1024):
+        return "Error: Image size exceeds 50MB limit for gpt-image-1."
+    if (MODEL == "dall-e-2" and os.path.getsize(image_path) > 4 * 1024 * 1024):
+        return "Error: Image size exceeds 4MB limit for dall-e-2."
+
+
+
+    try:
+        print("PATH:", image_path)
+        result = client.images.edit(
+            model=MODEL,
+            image=
+                open(image_path, "rb"), # LATER CORRECT THIS TO HANDLE MULTIPLE IMAGES FOR gpt-image-1
+
+            
+            prompt=prompt
+        )
+
+        print("Result:", result)
+        image_base64 = result.data[0].b64_json
+        image_bytes = base64.b64decode(image_base64)
+
+        # Save the image to a file
+        with open("output_image.png", "wb") as f:
+            f.write(image_bytes)
+
+
+
+
+
+    except Exception as e:
+        return "Unknown Error Occured: ",e 
+
+if __name__ == "__main__":
+    # Example usage
+    # Ensure you have a valid image path
+    response = edit_image("A cat in the basket", "gift-basket.png")
+    print("Response:", response)
+
