@@ -10,7 +10,18 @@ import json
 
 load_dotenv()
 
-BASE_DIR = "sample_nestle.txt"
+
+
+'''
+1. USE RAG
+2. MEMORY SHOULD BE SAVED IN FOLDER NEATLY
+3. ALLOW MULTIPLE USERS TO CONNECT SIMULTANEOUSLY
+4. SUMMARIZATION OF CHAT HISTORY WAS NOT WORKING
+
+'''
+
+
+BASE_DIR = "sample_nestle.txt" # later can be replaced with a URL when its a RAG
 
 class ConversationalChatbot:
     def __init__(self, api_key: str, base_dir: str):
