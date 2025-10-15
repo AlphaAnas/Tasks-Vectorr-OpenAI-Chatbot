@@ -6,7 +6,7 @@ import ntplib
 from dotenv import load_dotenv
 from task_1c import generate_image
 from task_1d import edit_image
-from chatbot import BaseChatbot
+from chatbot import BaseChatbot 
 
 
 # ---------------- Utility function ----------------
@@ -44,7 +44,7 @@ class ConversationalImageChatbot(BaseChatbot):
                 "type": "function",
                 "function": {
                     "name": "edit_image",
-                    "description": "Edit an existing image based on a text prompt",
+                    "description": "Edit an existing image based on a text prompt and the image path(s)",
                     "parameters": {
                         "type": "object",
                         "properties": {
