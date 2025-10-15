@@ -1,152 +1,192 @@
-# task 02 - conversational chatbot 
+# task_02 - conversational chatbot (simple RAG version, no LangChain)
 
-from uuid import uuid4
-from openai import OpenAI
-import requests
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 import os
 import json
+from uuid import uuid4
+from dotenv import load_dotenv
+from openai import OpenAI
+import numpy as np
+import faiss
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+from chatbot import BaseChatbot
+
 
 load_dotenv()
+os.makedirs("chat_memory", exist_ok=True)
+
+# ---------------- Sample Documents ----------------
+docs = [
+    "Nestle is a global food and beverage company headquartered in Switzerland.",
+    "Nestle's product range includes baby food, bottled water, cereals, coffee, tea, dairy products, ice cream, pet foods, and snacks.",
+    "Our company is certified under ISO 22000 and HACCP standards.",
+    "We produce organic snacks using natural ingredients.",
+    "Food safety management ensures hygiene and compliance with regulations.",
+]
 
 
+# ---------------- Dense Retriever (FAISS) ----------------
+class DenseRetriever:
+    def __init__(self, client, texts):
+        self.client = client
+        self.texts = texts
+        self.embeddings = self._embed_texts(texts)
+        self.index = self._build_index(self.embeddings)
 
-'''
-1. USE RAG
-2. MEMORY SHOULD BE SAVED IN FOLDER NEATLY
-3. ALLOW MULTIPLE USERS TO CONNECT SIMULTANEOUSLY
-4. SUMMARIZATION OF CHAT HISTORY WAS NOT WORKING
+    def _embed_texts(self, texts):
+        embeds = [
+            self.client.embeddings.create(model="text-embedding-3-small", input=t).data[0].embedding
+            for t in texts
+        ]
+        return np.array(embeds, dtype="float32")
+
+    def _build_index(self, embeddings):
+        index = faiss.IndexFlatL2(embeddings.shape[1])
+        index.add(embeddings)
+        return index
+
+    def get_relevant_documents(self, query, k=2):
+        q_emb = self.client.embeddings.create(model="text-embedding-3-small", input=query).data[0].embedding
+        q_emb = np.array([q_emb], dtype="float32")
+        D, I = self.index.search(q_emb, k)
+        return [self.texts[i] for i in I[0]]
 
 
-'''
+# ---------------- Sparse Retriever (BM25-like TF-IDF) ----------------
+class SparseRetriever:
+    def __init__(self, texts):
+        self.texts = texts
+        self.vectorizer = TfidfVectorizer().fit(texts)
+        self.vectors = self.vectorizer.transform(texts)
+
+    def get_relevant_documents(self, query, k=2):
+        q_vec = self.vectorizer.transform([query])
+        scores = (self.vectors @ q_vec.T).toarray().ravel()
+        top_indices = np.argsort(scores)[::-1][:k]
+        return [self.texts[i] for i in top_indices if scores[i] > 0]
 
 
-BASE_DIR = "sample_nestle.txt" # later can be replaced with a URL when its a RAG
+# ---------------- Hybrid Retriever ----------------
+class HybridRetriever:
+    def __init__(self, sparse, dense, alpha=0.5):
+        self.sparse = sparse
+        self.dense = dense
+        self.alpha = alpha
 
-class ConversationalChatbot:
-    def __init__(self, api_key: str, base_dir: str):
+    def get_relevant_documents(self, query):
+        s_docs = self.sparse.get_relevant_documents(query)
+        d_docs = self.dense.get_relevant_documents(query)
+        combined = list({d: None for d in s_docs + d_docs}.keys())
+        return combined
+
+
+# ---------------- Conversational Chatbot ----------------
+class ConversationalChatbot(BaseChatbot):
+    def __init__(self, api_key, retriever):
+        super().__init__(api_key)
+        self.retriever = retriever
         self.client = OpenAI(api_key=api_key)
-        self.base_dir = base_dir
 
-    def scrape_text(self, url: str) -> str:
-        text = ""
-        if not url.startswith("http"):
-            try:
-                with open(url, 'r', encoding='utf-8') as file:
-                    text = file.read()
-            except FileNotFoundError:
-                print(f"Error: The file {url} was not found.")
-                return ""
-        else:
-            try:
-                res = requests.get(url)
-                res.raise_for_status()
-                soup = BeautifulSoup(res.text, "html.parser")
-                for tag in soup(["script", "style"]):
-                    tag.extract()
-                text = " ".join(soup.get_text().split())
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching URL: {e}")
-                return ""
-        return text[:6000]
+    def generate_answer(self, question, history):
+        retrieved_docs = self.retriever.get_relevant_documents(question)
+        context = "\n".join(retrieved_docs)
 
-    def get_history_path(self, session_id: str) -> str:
-        return f"history_{session_id}.json"
+        system_prompt = (
+            "You are a helpful assistant for Nestle. "
+            "Use only the provided context to answer. "
+            "If the answer isn't in context, say 'I do not know.'\n\n"
+            f"Context:\n{context}"
+        )
 
-    def load_history(self, session_id: str) -> list:
+        messages = [{"role": "system", "content": system_prompt}] + history + [
+            {"role": "user", "content": question}
+        ]
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=200,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error during generation: {e}")
+            return "Error occurred."
+
+    def get_history_path(self, session_id):
+        return os.path.join("chat_memory", f"history_{session_id}.json")
+
+    def load_history(self, session_id):
         path = self.get_history_path(session_id)
         if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 try:
                     return json.load(f)
                 except json.JSONDecodeError:
                     return []
         return []
 
-    def save_history(self, session_id: str, history: list):
+    def save_history(self, session_id, history):
         path = self.get_history_path(session_id)
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2)
 
-    def summarize_text(self, text: str) -> str:
-        if not text.strip():
-            return ""
+    def summarize_history(self, history):
+        if len(history) < 6:
+            return history
+        text = " ".join([h["content"] for h in history[:-4]])
         messages = [
-            {"role": "system", "content": "Summarize the following conversation concisely:"},
-            {"role": "user", "content": text}
+            {"role": "system", "content": "Summarize this conversation briefly:"},
+            {"role": "user", "content": text},
         ]
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o-mini",
                 messages=messages,
-                max_tokens=350,
-                n=1,
+                max_tokens=200,
             )
-            return response.choices[0].message.content
+            summary = response.choices[0].message.content
+            return [{"role": "system", "content": f"Summary of previous chat: {summary}"}] + history[-4:]
         except Exception as e:
-            print(f"Error during summarization: {e}")
-            return ""
+            print(f"Summarization error: {e}")
+            return history
 
-    def chatbot(self, question: str, context: str, history: list) -> str:
-        system_message = {
-            "role": 'system',
-            "content": f'You are a helpful assistant for Nestle. Use the following context to answer questions: "{context}". If the answer is not in the context, say you do not know.',
-        }
-        messages = [system_message] + history + [{"role": "user", "content": question}]
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                max_tokens=150,
-                messages=messages,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Error calling chatbot API: {e}")
-            return "Sorry, I encountered an error."
 
+# ---------------- Main ----------------
 def main():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("Error: OPENAI_API_KEY environment variable not set.")
+        print("OPENAI_API_KEY not set.")
         return
 
-    chatbot_instance = ConversationalChatbot(api_key=api_key, base_dir=BASE_DIR)
-    
+    client = OpenAI(api_key=api_key)
+    dense_retriever = DenseRetriever(client, docs)
+    sparse_retriever = SparseRetriever(docs)
+    hybrid_retriever = HybridRetriever(sparse_retriever, dense_retriever)
+
+    chatbot_instance = ConversationalChatbot(api_key, hybrid_retriever)
+
     session_id = str(uuid4())
     history = chatbot_instance.load_history(session_id)
-    print(f"Welcome to the Nestle Chatbot! Your session ID is {session_id}")
-    print("Type 'exit' or 'quit' to end the session.")
 
-    site_text = chatbot_instance.scrape_text(chatbot_instance.base_dir)
-    if not site_text:
-        print("Could not load context data. Exiting.")
-        return
+    print(f"Nestle Chatbot | Session ID: {session_id}")
+    print("Type 'exit' to quit.\n")
 
     while True:
-        try:
-            question = input("You: ")
-            if question.lower() in ["exit", "quit"]:
-                print("Goodbye!")
-                break
-
-            answer = chatbot_instance.chatbot(question, site_text, history)
-            print(f"Bot: {answer}")
-            
-            history.append({"role": "user", "content": question})
-            history.append({"role": "assistant", "content": answer})
-
-            if len(history) > 3:
-                old_text = " ".join([h["content"] for h in history[:-4]])
-                summary = chatbot_instance.summarize_text(old_text)
-                if summary:
-                    history = [{"role": "system", "content": f"Summary of previous chat: {summary}"}] + history[-4:]
-            
-            chatbot_instance.save_history(session_id, history)
-
-        except KeyboardInterrupt:
-            print("\nGoodbye!")
+        user_input = input("You: ")
+        if user_input.lower() in ["exit", "quit"]:
+            print("Goodbye.")
             break
+
+        answer = chatbot_instance.generate_answer(user_input, history)
+        print(f"Bot: {answer}\n")
+
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": answer})
+
+        history = chatbot_instance.summarize_history(history)
+        chatbot_instance.save_history(session_id, history)
+
 
 if __name__ == "__main__":
     main()

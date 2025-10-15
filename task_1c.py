@@ -49,6 +49,9 @@ def generate_image(prompt: str):
         with open(image_path, "wb") as img_file:
             img_file.write(img_response.content)
         return image_path, "Image generated successfully."
+    
+
+
  # --- Guardrail 2: Specific OpenAI Error Handling ---
     except BadRequestError as e:
         # This can happen if the prompt is rejected by the safety system.
@@ -67,40 +70,35 @@ def generate_image(prompt: str):
         return None, f"An unexpected error occurred: {e}"
 
 
-img_path=  generate_image("A shy cat")
-print("image is generated at:", img_path)
+
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
+    gr.Markdown("# OPENAI Image Generation")
+    gr.Markdown("Enter a text prompt to generate an image using OpenAI Image Generation Model.")
+
+    with gr.Row():
+        # Input component
+        prompt_input = gr.Textbox(
+            label="Prompt",
+            placeholder="e.g., A cute baby sea otter in a top hat",
+            lines=2
+        )
+    with gr.Row():
+        # Action button
+        submit_button = gr.Button("Generate Image", variant="primary")
+
+    with gr.Row():
+        # Output components
+        image_output = gr.Image(label="Generated Image")
+        status_output = gr.Textbox(label="Status", interactive=False)
 
 
+    # Connect the button click to the core logic function
+    submit_button.click(
+        fn=generate_image,
+        inputs=prompt_input,
+        outputs=[image_output, status_output]
+    )
 
-
-# with gr.Blocks(theme=gr.themes.Soft()) as demo:
-#     gr.Markdown("# OPENAI Image Generation")
-#     gr.Markdown("Enter a text prompt to generate an image using OpenAI Image Generation Model.")
-
-#     with gr.Row():
-#         # Input component
-#         prompt_input = gr.Textbox(
-#             label="Prompt",
-#             placeholder="e.g., A cute baby sea otter in a top hat",
-#             lines=2
-#         )
-#     with gr.Row():
-#         # Action button
-#         submit_button = gr.Button("Generate Image", variant="primary")
-
-#     with gr.Row():
-#         # Output components
-#         image_output = gr.Image(label="Generated Image")
-#         status_output = gr.Textbox(label="Status", interactive=False)
-
-
-#     # Connect the button click to the core logic function
-#     submit_button.click(
-#         fn=generate_image,
-#         inputs=prompt_input,
-#         outputs=[image_output, status_output]
-#     )
-
-# if __name__ == "__main__":
-#     # The launch() method creates and runs the web server.
-#     demo.launch()
+if __name__ == "__main__":
+    # The launch() method creates and runs the web server.
+    demo.launch()
